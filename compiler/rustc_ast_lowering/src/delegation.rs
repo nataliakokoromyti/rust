@@ -152,10 +152,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
     ) -> DelegationResults<'hir> {
         let span = self.lower_span(delegation.path.segments.last().unwrap().ident.span);
 
-        let ids = self.get_delegation_ids(
-            self.resolver.delegation_infos[&self.local_def_id(item_id)].resolution_node,
-            span,
-        );
+        let Some(info) = self.resolver.delegation_infos.get(&self.local_def_id(item_id)) else {
+            // If name resolution didn't record delegation info for this item (e.g. the item is already invalid),
+            // avoid ICE. Emit an error and synthesize a stub delegation item.
+            let err = self.dcx().span_err(span, "`reuse` is not allowed here");
+            return self.generate_delegation_error(err, span, delegation);
+        };
+
+        let ids = self.get_delegation_ids(info.resolution_node, span);
 
         match ids {
             Ok(ids) => {
