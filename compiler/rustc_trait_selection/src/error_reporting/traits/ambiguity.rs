@@ -348,6 +348,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                         self.find_similar_impl_candidates(predicate.as_trait_clause().unwrap());
                     if impl_candidates.len() < 40 {
                         self.report_similar_impl_candidates(
+                            obligation,
                             impl_candidates.as_slice(),
                             trait_pred,
                             obligation.cause.body_id,

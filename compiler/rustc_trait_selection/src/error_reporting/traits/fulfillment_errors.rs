@@ -15,6 +15,7 @@ use rustc_errors::{
     pluralize, struct_span_code_err,
 };
 use rustc_hir::attrs::diagnostic::CustomDiagnostic;
+use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::{DefId, LOCAL_CRATE, LocalDefId};
 use rustc_hir::intravisit::Visitor;
 use rustc_hir::{self as hir, LangItem, Node, find_attr};
@@ -2007,6 +2008,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
 
     pub(super) fn report_similar_impl_candidates(
         &self,
+        obligation: &PredicateObligation<'tcx>,
         impl_candidates: &[ImplCandidate<'tcx>],
         trait_pred: ty::PolyTraitPredicate<'tcx>,
         body_def_id: LocalDefId,
@@ -2072,6 +2074,9 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
         };
 
         if let [single] = &impl_candidates {
+            if self.should_suppress_similar_impl_help_for_free_fn_call(obligation) {
+                return false;
+            }
             // If we have a single implementation, try to unify it with the trait ref
             // that failed. This should uncover a better hint for what *is* implemented.
             if self.probe(|_| {
@@ -2490,6 +2495,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
         if peeled && !self.tcx.trait_is_auto(def_id) && self.tcx.as_lang_item(def_id).is_none() {
             let impl_candidates = self.find_similar_impl_candidates(trait_pred);
             self.report_similar_impl_candidates(
+                obligation,
                 &impl_candidates,
                 trait_pred,
                 body_def_id,
@@ -2498,6 +2504,38 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                 obligation.param_env,
             );
         }
+    }
+
+    fn should_suppress_similar_impl_help_for_free_fn_call(
+        &self,
+        obligation: &PredicateObligation<'tcx>,
+    ) -> bool {
+        let ObligationCauseCode::WhereClauseInExpr(_, _, hir_id, _) = obligation.cause.code()
+        else {
+            return false;
+        };
+        let Some(body) = self.tcx.hir_maybe_body_owned_by(obligation.cause.body_id) else {
+            return false;
+        };
+
+        let mut expr_finder = FindExprBySpan::new(obligation.cause.span, self.tcx);
+        expr_finder.visit_expr(body.value);
+        let Some(expr) = expr_finder.result else {
+            return false;
+        };
+
+        let hir::ExprKind::Call(base, _) = expr.kind else {
+            return false;
+        };
+        if base.hir_id != *hir_id {
+            return false;
+        }
+
+        matches!(
+            base.kind,
+            hir::ExprKind::Path(hir::QPath::Resolved(None, path))
+                if matches!(path.res, Res::Def(DefKind::Fn, _))
+        )
     }
 
     /// Gets the parent trait chain start
@@ -3164,6 +3202,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
             // Can't show anything else useful, try to find similar impls.
             let impl_candidates = self.find_similar_impl_candidates(trait_predicate);
             if !self.report_similar_impl_candidates(
+                obligation,
                 &impl_candidates,
                 trait_predicate,
                 body_def_id,
