@@ -1737,6 +1737,18 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
             let Some(expr) = expr_finder.result else {
                 return false;
             };
+            if let ObligationCauseCode::WhereClauseInExpr(_, _, hir_id, _) = obligation.cause.code()
+                && let hir::ExprKind::Call(base, _) = expr.kind
+                && base.hir_id == *hir_id
+                && let hir::ExprKind::Path(hir::QPath::Resolved(None, path)) = base.kind
+                && matches!(path.res, Res::Def(DefKind::Fn, _))
+            {
+                // `WhereClauseInExpr` can point at the whole free-function call `foo(...)`,
+                // even though the failing trait obligation comes from one of its inputs.
+                // Borrowing that enclosing expression would suggest `&foo(...)`, which does not
+                // address the failed bound.
+                return false;
+            }
             if let hir::ExprKind::AddrOf(_, _, _) = expr.kind {
                 return false;
             }
