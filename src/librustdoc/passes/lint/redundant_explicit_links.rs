@@ -15,6 +15,7 @@ use rustc_span::{Span, Symbol};
 use crate::clean::Item;
 use crate::clean::utils::{find_nearest_parent_module, inherits_doc_hidden};
 use crate::core::DocContext;
+use crate::formats::item_type::ItemType;
 use crate::html::markdown::main_body_opts;
 
 #[derive(Debug)]
@@ -104,9 +105,15 @@ fn check_redundant_explicit_link<'md>(
             }
 
             let explicit_link = dest_url.to_string();
+            let normalized_explicit_link =
+                rendered_path_item_name(&explicit_link).unwrap_or(&explicit_link);
             let display_link = link_data.resolvable_link.clone()?;
 
-            if explicit_link.ends_with(&display_link) || display_link.ends_with(&explicit_link) {
+            if explicit_link.ends_with(&display_link)
+                || display_link.ends_with(&explicit_link)
+                || normalized_explicit_link.ends_with(&display_link)
+                || display_link.ends_with(normalized_explicit_link)
+            {
                 match link_type {
                     LinkType::Inline | LinkType::ReferenceUnknown => {
                         check_inline_or_reference_unknown_redundancy(
@@ -348,9 +355,23 @@ fn check_reference_redundancy(
 }
 
 fn find_resolution(resolutions: &DocLinkResMap, path: &str) -> Option<Res<NodeId>> {
-    [Namespace::TypeNS, Namespace::ValueNS, Namespace::MacroNS]
-        .into_iter()
-        .find_map(|ns| resolutions.get(&(Symbol::intern(path), ns)).copied().flatten())
+    let rendered_path = rendered_path_item_name(path);
+    std::iter::once(path).chain(rendered_path.as_deref()).find_map(|path| {
+        [Namespace::TypeNS, Namespace::ValueNS, Namespace::MacroNS]
+            .into_iter()
+            .find_map(|ns| resolutions.get(&(Symbol::intern(path), ns)).copied().flatten())
+    })
+}
+
+fn rendered_path_item_name(path: &str) -> Option<&str> {
+    let path = path.split(['#', '?']).next()?;
+    let file_name = path.rsplit('/').next()?;
+
+    if file_name == "index.html" {
+        return path.rsplit('/').nth(1);
+    }
+
+    ItemType::from_filename(file_name).map(|(_, item_name)| item_name)
 }
 
 /// Collects all necessary data of link.

@@ -150,6 +150,44 @@ impl<'a> From<&'a clean::Item> for ItemType {
 }
 
 impl ItemType {
+    pub(crate) fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "mod" => Self::Module,
+            "externcrate" => Self::ExternCrate,
+            "import" => Self::Import,
+            "struct" => Self::Struct,
+            "union" => Self::Union,
+            "enum" => Self::Enum,
+            "fn" => Self::Function,
+            "type" => Self::TypeAlias,
+            "static" => Self::Static,
+            "trait" => Self::Trait,
+            "impl" => Self::Impl,
+            "tymethod" => Self::TyMethod,
+            "method" => Self::Method,
+            "structfield" => Self::StructField,
+            "variant" => Self::Variant,
+            "macro" => Self::Macro,
+            "primitive" => Self::Primitive,
+            "associatedtype" => Self::AssocType,
+            "constant" => Self::Constant,
+            "associatedconstant" => Self::AssocConst,
+            "foreigntype" => Self::ForeignType,
+            "keyword" => Self::Keyword,
+            "attr" => Self::ProcAttribute,
+            "derive" => Self::ProcDerive,
+            "traitalias" => Self::TraitAlias,
+            "attribute" => Self::Attribute,
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn from_filename(file_name: &str) -> Option<(Self, &str)> {
+        let file_name = file_name.strip_suffix(".html")?;
+        let (item_kind, item_name) = file_name.split_once('.')?;
+        Some((Self::from_str(item_kind)?, item_name))
+    }
+
     pub(crate) fn from_def_id(def_id: DefId, tcx: TyCtxt<'_>) -> Self {
         let def_kind = tcx.def_kind(def_id);
         match def_kind {
